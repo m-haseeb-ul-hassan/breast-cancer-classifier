@@ -4,7 +4,7 @@ A deep learning pipeline that classifies breast tissue histopathology images as 
 
 **Live demo:** [breast-cancer-classifier-nvht3vafhqswaeqmwpzntq.streamlit.app](https://breast-cancer-classifier-nvht3vafhqswaeqmwpzntq.streamlit.app/)
 
-![App screenshot](assets/app_screenshot.png)
+![App screenshot](assets/app_screenshot.jpg)
 
 ---
 
@@ -46,10 +46,10 @@ Grad-CAM visualizations revealed the model was, in some cases, focusing on the i
 A follow-up experiment cropped more aggressively (~30% border removed) to try to eliminate the remaining border-bias entirely. This made results *worse* across every metric, and the edge-bias persisted anyway. This is a meaningful finding, not just a failed attempt: it suggests the artifact isn't really about the original photo's border, but a known characteristic of convolutional layers, where zero-padding at *whatever* boundary the network is given can create a faint learnable signal near that edge — cropping tighter just creates a new edge in the same place, relative to the network's receptive field. The moderate crop was kept as final since it captured the real improvement without over-cropping useful tissue content.
 
 **Before the fix** — note the heatmap sitting on the image border in several panels, including a 98%-confidence false positive:
-![Grad-CAM before fix](assets/gradcam_before_fix.png)
+![Grad-CAM before fix](assets/gradcam_before_fix.jpg)
 
 **After the moderate crop fix** — attention shifts toward central tissue structure in most cases:
-![Grad-CAM after fix](assets/gradcam_after_fix.png)
+![Grad-CAM after fix](assets/gradcam_after_fix.jpg)
 
 **Known limitation:** border-focused attention is reduced but not fully eliminated in the final model. Future work could explore lesion-guided ROI cropping instead of a fixed geometric crop.
 
@@ -102,7 +102,7 @@ Getting this deployed for free surfaced a chain of real infrastructure issues wo
 
 ## AI-assistance disclosure
 
-This project was built with AI assistance for implementation support, debugging, and deployment troubleshooting, under my direction — I made the architectural decisions (patient-level splitting, crop-based fix for the edge-bias finding, threshold selection), ran and interpreted every experiment, and diagnosed the issues described above (the overfitting reversal, the edge-bias investigation, the deployment dependency chain) myself before deciding how to address them.
+This project was built with AI assistance for implementation support, debugging, and deployment troubleshooting, under my direction — I made the architectural decisions (patient level splitting, crop based fix for the edge bias finding, threshold selection), ran and interpreted every experiment, and diagnosed the issues described above (the overfitting reversal, the edge-bias investigation, the deployment dependency chain) myself before deciding how to address them.
 
 ## Acknowledgments
 
