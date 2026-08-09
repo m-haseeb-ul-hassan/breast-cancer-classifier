@@ -1,17 +1,18 @@
-# streamlit_app.py
-# this replaces the gradio app.py -- same model, same predict logic, different UI framework
-# deploy this on Streamlit Community Cloud (share.streamlit.io), completely free, unaffected
-# by Hugging Face's recent Gradio/Docker paywall change
+# app.py
+# final fix: cv2 kept causing system-library failures on streamlit cloud (libGL, then
+# libgthread, apt environment there is in a broken state for opencv's dependencies).
+# solution: don't use cv2 anywhere. PIL/numpy handle image prep, and a small custom
+# function replaces pytorch_grad_cam's show_cam_on_image (which is the ONLY part of that
+# library that needs cv2 -- the core GradCAM algorithm itself doesn't touch cv2 at all)
 
 import streamlit as st
 import torch
 import torch.nn as nn
 import numpy as np
-import cv2
+import matplotlib.cm as cm
 from PIL import Image
 from torchvision import models
 from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -22,8 +23,6 @@ MEAN = np.array([0.485, 0.456, 0.406])
 STD = np.array([0.229, 0.224, 0.225])
 
 
-# cache the model so it only loads once, not on every interaction (streamlit reruns the
-# whole script top-to-bottom on every button click, this decorator prevents reloading each time)
 @st.cache_resource
 def load_model():
     model = models.efficientnet_b0(weights=None)
@@ -42,23 +41,34 @@ def load_model():
 
 
 def prep_image(pil_image):
-    img = np.array(pil_image.convert("RGB"))
-    h, w, _ = img.shape
+    # PIL + numpy only, no cv2, no system dependencies needed at all
+    pil_image = pil_image.convert("RGB")
+    w, h = pil_image.size
 
     if h < CROP_H or w < CROP_W:
         scale = max(CROP_H / h, CROP_W / w) + 0.01
-        img = cv2.resize(img, (int(w * scale) + 1, int(h * scale) + 1))
-        h, w, _ = img.shape
+        pil_image = pil_image.resize((int(w * scale) + 1, int(h * scale) + 1), Image.BILINEAR)
+        w, h = pil_image.size
 
-    top = (h - CROP_H) // 2
     left = (w - CROP_W) // 2
-    img = img[top:top + CROP_H, left:left + CROP_W]
-    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+    top = (h - CROP_H) // 2
+    pil_image = pil_image.crop((left, top, left + CROP_W, top + CROP_H))
+    pil_image = pil_image.resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
 
-    img_float = img.astype(np.float32) / 255.0
+    img_float = np.array(pil_image).astype(np.float32) / 255.0
     normalized = (img_float - MEAN) / STD
     tensor = torch.tensor(normalized.transpose(2, 0, 1), dtype=torch.float32).unsqueeze(0)
     return img_float, tensor
+
+
+def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
+    # replaces pytorch_grad_cam's show_cam_on_image, same idea (jet colormap blended
+    # over the original image) but using matplotlib instead of cv2's colormap function
+    jet = cm.get_cmap("jet")
+    heatmap = jet(grayscale_cam)[:, :, :3]  # drop alpha channel from RGBA, keep RGB, 0-1 range
+    blended = (1 - alpha) * img_float + alpha * heatmap
+    blended = np.clip(blended, 0, 1)
+    return (blended * 255).astype(np.uint8)
 
 
 def predict(model, cam, pil_image, threshold):
@@ -74,7 +84,7 @@ def predict(model, cam, pil_image, threshold):
 
     targets = [ClassifierOutputTarget(1)]  # heatmap always explains "what looks malignant"
     grayscale_cam = cam(input_tensor=tensor, targets=targets)[0]
-    overlay = show_cam_on_image(img_float, grayscale_cam, use_rgb=True)
+    overlay = overlay_heatmap(img_float, grayscale_cam)
 
     return label, prob_malignant, (img_float * 255).astype(np.uint8), overlay
 
@@ -108,7 +118,6 @@ with col_output:
         pil_image = Image.open(uploaded_file)
         label, prob, cropped_img, heatmap = predict(model, cam, pil_image, threshold)
 
-        confidence = prob if label == "Malignant" else (1 - prob)
         if label == "Malignant":
             st.error(f"**Prediction: {label}**  (P(malignant) = {prob:.1%}, threshold = {threshold:.2f})")
         else:
