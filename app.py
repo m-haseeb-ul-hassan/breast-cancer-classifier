@@ -1,13 +1,13 @@
 # app.py
-#  pytorch_grad_cam library's CORE class (not just visualization) unconditionally
+# pytorch_grad_cam library's CORE class (not just visualization) unconditionally
 # imports cv2, so there's no clean way to keep using the library and avoid cv2's system
-# dependency problems on streamlit cloud. solution: implement grad-cam ourselves.
+# dependency problems on streamlit cloud. solution: implement gradcam ourselves.
 
 import streamlit as st
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.cm as cm
+import matplotlib as mpl
 from PIL import Image
 from torchvision import models
 
@@ -106,7 +106,7 @@ def prep_image(pil_image):
 
 
 def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
-    jet = cm.get_cmap("jet")
+    jet = mpl.colormaps["jet"]
     heatmap = jet(grayscale_cam)[:, :, :3]
     blended = (1 - alpha) * img_float + alpha * heatmap
     blended = np.clip(blended, 0, 1)
