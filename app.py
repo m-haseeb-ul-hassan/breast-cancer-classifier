@@ -1,22 +1,20 @@
 # app.py
-# final version: pytorch_grad_cam library's CORE class (not just visualization) unconditionally
+#  pytorch_grad_cam library's CORE class (not just visualization) unconditionally
 # imports cv2, so there's no clean way to keep using the library and avoid cv2's system
 # dependency problems on streamlit cloud. solution: implement grad-cam ourselves.
-# it's genuinely a short algorithm, and understanding it this well is a better interview
-# answer than "I imported a library" anyway.
 
 import streamlit as st
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib as mpl
+import matplotlib.cm as cm
 from PIL import Image
 from torchvision import models
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 IMG_SIZE = 224
-CROP_W, CROP_H = 560, 368  # must match the moderate-crop setup used in training
+CROP_W, CROP_H = 560, 368  # must match the moderate crop setup used in training
 MEAN = np.array([0.485, 0.456, 0.406])
 STD = np.array([0.229, 0.224, 0.225])
 
@@ -108,7 +106,7 @@ def prep_image(pil_image):
 
 
 def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
-    jet = mpl.colormaps["jet"]
+    jet = cm.get_cmap("jet")
     heatmap = jet(grayscale_cam)[:, :, :3]
     blended = (1 - alpha) * img_float + alpha * heatmap
     blended = np.clip(blended, 0, 1)
@@ -137,7 +135,7 @@ def predict(model, cam, pil_image, threshold):
 # ---------------- UI ----------------
 st.set_page_config(page_title="Breast Cancer Histopathology Classifier", page_icon="🔬", layout="wide")
 
-st.title("🔬 Breast Cancer Histopathology Classifier")
+st.title("🎗️ Breast Cancer Histopathology Classifier")
 st.write("Upload a breast tissue histopathology image. The model predicts Benign vs Malignant and shows a Grad-CAM heatmap of what it focused on.")
 
 st.warning(
