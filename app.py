@@ -9,7 +9,7 @@ import streamlit as st
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.cm as cm
+import matplotlib as mpl
 from PIL import Image
 from torchvision import models
 
@@ -108,7 +108,7 @@ def prep_image(pil_image):
 
 
 def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
-    jet = cm.get_cmap("jet")
+    jet = mpl.colormaps["jet"]
     heatmap = jet(grayscale_cam)[:, :, :3]
     blended = (1 - alpha) * img_float + alpha * heatmap
     blended = np.clip(blended, 0, 1)
