@@ -1,9 +1,9 @@
 # app.py
-# final fix: cv2 kept causing system-library failures on streamlit cloud (libGL, then
-# libgthread, apt environment there is in a broken state for opencv's dependencies).
-# solution: don't use cv2 anywhere. PIL/numpy handle image prep, and a small custom
-# function replaces pytorch_grad_cam's show_cam_on_image (which is the ONLY part of that
-# library that needs cv2 -- the core GradCAM algorithm itself doesn't touch cv2 at all)
+# final version: pytorch_grad_cam library's CORE class (not just visualization) unconditionally
+# imports cv2, so there's no clean way to keep using the library and avoid cv2's system
+# dependency problems on streamlit cloud. solution: implement grad-cam ourselves.
+# it's genuinely a short algorithm, and understanding it this well is a better interview
+# answer than "I imported a library" anyway.
 
 import streamlit as st
 import torch
@@ -12,8 +12,6 @@ import numpy as np
 import matplotlib.cm as cm
 from PIL import Image
 from torchvision import models
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -21,6 +19,55 @@ IMG_SIZE = 224
 CROP_W, CROP_H = 560, 368  # must match the moderate-crop setup used in training
 MEAN = np.array([0.485, 0.456, 0.406])
 STD = np.array([0.229, 0.224, 0.225])
+
+
+class SimpleGradCAM:
+    """
+    minimal grad-cam implementation, no external cam library needed.
+    how it works: hook the target conv layer to grab its output (activations) during
+    the forward pass, and its gradient during the backward pass. then weight each
+    activation channel by how much it mattered (average gradient for that channel),
+    sum them up, and that's your heatmap -- channels the model relied on more heavily
+    for this prediction light up more.
+    """
+    def __init__(self, model, target_layer):
+        self.model = model
+        self.activations = None
+        self.gradients = None
+        target_layer.register_forward_hook(self._save_activation)
+        target_layer.register_full_backward_hook(self._save_gradient)
+
+    def _save_activation(self, module, input, output):
+        self.activations = output.detach()
+
+    def _save_gradient(self, module, grad_input, grad_output):
+        self.gradients = grad_output[0].detach()
+
+    def __call__(self, input_tensor, target_class):
+        self.model.zero_grad()
+        output = self.model(input_tensor)
+        score = output[0, target_class]
+        score.backward()
+
+        gradients = self.gradients[0]      # shape: (channels, h, w)
+        activations = self.activations[0]  # shape: (channels, h, w)
+
+        # global average pool the gradients per channel -> "how important is this channel"
+        weights = gradients.mean(dim=(1, 2))  # shape: (channels,)
+
+        # weighted sum of activation maps
+        cam = torch.zeros(activations.shape[1:], dtype=torch.float32, device=activations.device)
+        for i, w in enumerate(weights):
+            cam += w * activations[i]
+
+        cam = torch.relu(cam)  # only care about features that POSITIVELY influenced this class
+        cam = cam - cam.min()
+        cam = cam / (cam.max() + 1e-8)  # normalize to 0-1
+        cam = cam.cpu().numpy()
+
+        # resize the (small) cam map up to full image size, PIL handles this, no cv2 needed
+        cam_img = Image.fromarray(np.uint8(cam * 255)).resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
+        return np.array(cam_img).astype(np.float32) / 255.0
 
 
 @st.cache_resource
@@ -35,13 +82,12 @@ def load_model():
     model = model.to(device)
     model.eval()
 
-    target_layers = [model.features[-1]]
-    cam = GradCAM(model=model, target_layers=target_layers)
+    target_layer = model.features[-1]  # same layer we used during evaluation in colab
+    cam = SimpleGradCAM(model, target_layer)
     return model, cam
 
 
 def prep_image(pil_image):
-    # PIL + numpy only, no cv2, no system dependencies needed at all
     pil_image = pil_image.convert("RGB")
     w, h = pil_image.size
 
@@ -62,10 +108,8 @@ def prep_image(pil_image):
 
 
 def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
-    # replaces pytorch_grad_cam's show_cam_on_image, same idea (jet colormap blended
-    # over the original image) but using matplotlib instead of cv2's colormap function
     jet = cm.get_cmap("jet")
-    heatmap = jet(grayscale_cam)[:, :, :3]  # drop alpha channel from RGBA, keep RGB, 0-1 range
+    heatmap = jet(grayscale_cam)[:, :, :3]
     blended = (1 - alpha) * img_float + alpha * heatmap
     blended = np.clip(blended, 0, 1)
     return (blended * 255).astype(np.uint8)
@@ -74,6 +118,7 @@ def overlay_heatmap(img_float, grayscale_cam, alpha=0.5):
 def predict(model, cam, pil_image, threshold):
     img_float, tensor = prep_image(pil_image)
     tensor = tensor.to(device)
+    tensor.requires_grad = False  # only need gradients w.r.t. activations, not input pixels
 
     with torch.no_grad():
         output = model(tensor)
@@ -82,8 +127,8 @@ def predict(model, cam, pil_image, threshold):
     pred_class = 1 if prob_malignant >= threshold else 0
     label = "Malignant" if pred_class == 1 else "Benign"
 
-    targets = [ClassifierOutputTarget(1)]  # heatmap always explains "what looks malignant"
-    grayscale_cam = cam(input_tensor=tensor, targets=targets)[0]
+    # need gradients enabled for the cam backward pass, so a fresh forward pass here
+    grayscale_cam = cam(tensor, target_class=1)  # heatmap always explains "what looks malignant"
     overlay = overlay_heatmap(img_float, grayscale_cam)
 
     return label, prob_malignant, (img_float * 255).astype(np.uint8), overlay
@@ -134,4 +179,4 @@ with col_output:
         st.info("Upload an image and click Analyze to see results.")
 
 st.markdown("---")
-st.caption("Model: EfficientNetB0 (transfer learning, fine-tuned last block) | Dataset: BreaKHis | Explainability: Grad-CAM")
+st.caption("Model: EfficientNetB0 (transfer learning, fine-tuned last block) | Dataset: BreaKHis | Explainability: Grad-CAM (custom implementation)")
