@@ -2,7 +2,7 @@
 
 A deep learning pipeline that classifies breast tissue histopathology images as **Benign** or **Malignant**, with a built-in explainability layer (Grad-CAM) so predictions aren't a black box. Trained on the public BreaKHis dataset using transfer learning, evaluated with a patient-level split to avoid data leakage, and deployed as a live interactive demo.
 
-**Live demo:** [breast-cancer-classifier-nvht3vafhqswaeqmwpzntq.streamlit.app](https://breast-cancer-classifier-nvht3vafhqswaeqmwpzntq.streamlit.app/)
+**Live demo:** [https://breast-cancer-classifier-9jvbxy7lxwanxqcw5o5xnc.streamlit.app/](https://breast-cancer-classifier-9jvbxy7lxwanxqcw5o5xnc.streamlit.app/)
 
 ![App screenshot](assets/app_screenshot.jpg)
 
