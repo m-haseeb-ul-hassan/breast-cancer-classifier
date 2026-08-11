@@ -1,0 +1,14 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # runs every 10 hours, comfortably under streamlit's 12-hour sleep threshold
+    - cron: '0 */10 * * *'
+  workflow_dispatch:  # lets you manually trigger it from the Actions tab too
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the app to keep it awake
+        run: curl -s https://breast-cancer-classifier-9jvbxy7lxwanxqcw5o5xnc.streamlit.app/ > /dev/null
