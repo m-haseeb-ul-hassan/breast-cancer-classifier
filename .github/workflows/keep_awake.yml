@@ -2,13 +2,27 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # runs every 10 hours, comfortably under streamlit's 12-hour sleep threshold
-    - cron: '0 */10 * * *'
-  workflow_dispatch:  # lets you manually trigger it from the Actions tab too
+    # every 6 hours, well under streamlit's sleep threshold
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
-  ping:
+  keepalive:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Ping the app to keep it awake
-        run: curl -s https://breast-cancer-classifier-9jvbxy7lxwanxqcw5o5xnc.streamlit.app/ > /dev/null
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Run keepalive script
+        run: python keepalive.py
